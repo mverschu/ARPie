@@ -133,8 +133,8 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
             if "NTLM" in auth_header:
                 print(f"{Fore.YELLOW}[INFO] NTLM Authentication Detected{Style.RESET_ALL}")
                 try:
-                    ntlm_message = base64.b64decode(auth_header.split()[2]).hex()
-                    print(f"{Fore.CYAN}[INFO] NTLM Message: {ntlm_message}{Style.RESET_ALL}")
+                    ntlm_message = base64.b64decode(auth_header.split()[1])
+                    print(f"{Fore.CYAN}[INFO] NTLM Message: {ntlm_message.hex()}{Style.RESET_ALL}")
                 except (IndexError, base64.binascii.Error) as e:
                     print(f"{Fore.RED}[ERROR] Failed to decode NTLM message: {e}{Style.RESET_ALL}")
 
