@@ -25,7 +25,7 @@ This script performs ARP poisoning, DNS spoofing, and WPAD exploitation. It is d
 
 ## Usage
 ```bash
-python script_name.py -i <interface> --target-ip <target_ip> [options]
+python arp.py -i <interface> --target-ip <target_ip> [options]
 ```
 
 ### Arguments
