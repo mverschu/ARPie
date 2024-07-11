@@ -78,4 +78,14 @@ Starts a proxy server on the specified port to serve the malicious WPAD file.
 
 ---
 
+## Screenshots
+
+#### Computer take over
+
+![image](https://github.com/mverschu/ARPie/assets/69352107/2329f690-d3ed-4789-918c-b016ffc19605)
+
+#### User take over
+
+![image](https://github.com/mverschu/ARPie/assets/69352107/861cdb4b-0016-4525-b564-c4144ec49ff3)
+
 By following the instructions above, you can utilize this script for network security testing and analysis. Ensure you have permission to test the network you are targeting.
