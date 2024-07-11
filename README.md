@@ -1,6 +1,8 @@
 
 # ARP/DNS Poisoning and WPAD Exploitation Script
 
+<img src="https://github.com/mverschu/ARPie/assets/69352107/a24746e2-dd2e-42ce-bc16-75ee1883c029" width="300" height="300" alt="ARPie">
+
 ## Overview
 This script performs ARP poisoning, DNS spoofing, and WPAD exploitation. It is designed for network penetration testing and security analysis.
 
